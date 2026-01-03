@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  postgresql:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: upbit_metrics
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: upbit_metrics
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U upbit_metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: ..
+    command: uvicorn src.interfaces.api.main:app --host 0.0.0.0 --port 8000
+    environment:
+      DATABASE_URL: postgresql+asyncpg://upbit_metrics:password@postgresql:5432/upbit_metrics
+      UPBIT_ACCESS_KEY: ${UPBIT_ACCESS_KEY}
+      UPBIT_SECRET_KEY: ${UPBIT_SECRET_KEY}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgresql:
+        condition: service_healthy
+
+  collector:
+    build: ..
+    command: python -m src.collectors.main
+    environment:
+      DATABASE_URL: postgresql+asyncpg://upbit_metrics:password@postgresql:5432/upbit_metrics
+      UPBIT_ACCESS_KEY: ${UPBIT_ACCESS_KEY}
+      UPBIT_SECRET_KEY: ${UPBIT_SECRET_KEY}
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      api:
+        condition: service_started
+
+volumes:
+  postgres_data:
+
+
