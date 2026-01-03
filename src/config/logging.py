@@ -11,8 +11,14 @@ from structlog.stdlib import LoggerFactory
 from .env_config import LOG_LEVEL
 
 # 로그 디렉토리 생성
-LOG_DIR = Path(__file__).parent.parent.parent / "logs"
-LOG_DIR.mkdir(exist_ok=True)
+# 환경 변수 LOG_DIR이 있으면 사용, 없으면 기본 경로 사용
+import os
+LOG_DIR_ENV = os.getenv("LOG_DIR")
+if LOG_DIR_ENV:
+    LOG_DIR = Path(LOG_DIR_ENV)
+else:
+    LOG_DIR = Path(__file__).parent.parent.parent / "logs"
+LOG_DIR.mkdir(exist_ok=True, parents=True)
 
 # Structlog 설정
 structlog.configure(
