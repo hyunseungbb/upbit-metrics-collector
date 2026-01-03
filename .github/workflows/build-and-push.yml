@@ -76,7 +76,12 @@ jobs:
           
           # KUBECONFIG 디코딩 및 저장
           KUBECONFIG_PATH="${{ github.workspace }}/kubeconfig.yaml"
-          echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$KUBECONFIG_PATH"
+          echo "Decoding KUBECONFIG secret..."
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$KUBECONFIG_PATH" || {
+            echo "Failed to decode KUBECONFIG"
+            echo "configured=false" >> $GITHUB_OUTPUT
+            exit 1
+          }
           
           # 파일이 제대로 생성되었는지 확인
           if [ ! -f "$KUBECONFIG_PATH" ]; then
@@ -85,15 +90,21 @@ jobs:
             exit 1
           fi
           
+          # KUBECONFIG 파일 내용 확인 (서버 주소만)
+          echo "KUBECONFIG file created. Server:"
+          grep -A 2 "server:" "$KUBECONFIG_PATH" | head -3 || echo "Could not read server from kubeconfig"
+          
           # kubectl 연결 테스트
           export KUBECONFIG="$KUBECONFIG_PATH"
+          echo "Testing kubectl connection..."
           if kubectl cluster-info > /dev/null 2>&1; then
             echo "KUBECONFIG configured and cluster connection verified"
             echo "configured=true" >> $GITHUB_OUTPUT
             echo "kubeconfig_path=$KUBECONFIG_PATH" >> $GITHUB_OUTPUT
           else
             echo "Failed to connect to cluster with KUBECONFIG"
-            kubectl cluster-info || true
+            echo "Current KUBECONFIG: $KUBECONFIG"
+            kubectl cluster-info 2>&1 || true
             echo "configured=false" >> $GITHUB_OUTPUT
             exit 1
           fi
