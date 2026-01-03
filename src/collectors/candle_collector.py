@@ -68,11 +68,11 @@ class CandleCollector:
                 candle_count = len(self.calculator.candles.get(symbol, []))
                 logger.info("새로운 캔들 수신", symbol=symbol, candle_time=candle_date_time_kst, candle_count=candle_count)
                 
-                # 캔들 데이터가 충분히 쌓였는지 확인 후 저장
-                if candle_count >= 2:
+                # 캔들 데이터가 1개 이상이면 저장 시도 (range_1m은 최소 1개 캔들만 있어도 계산 가능)
+                if candle_count >= 1:
                     await self._save_volatility(symbol)
                 else:
-                    logger.debug("캔들 데이터 부족, 저장 대기", symbol=symbol, candle_count=candle_count, required=2)
+                    logger.debug("캔들 데이터 부족, 저장 대기", symbol=symbol, candle_count=candle_count, required=1)
             else:
                 # 같은 캔들 업데이트
                 logger.debug("캔들 업데이트", symbol=symbol)
@@ -98,10 +98,10 @@ class CandleCollector:
                         
                         for symbol in symbols:
                             candle_count = len(self.calculator.candles.get(symbol, []))
-                            if candle_count >= 2:
+                            if candle_count >= 1:
                                 await self._save_volatility(symbol)
                             else:
-                                logger.debug("주기적 계산: 캔들 데이터 부족", symbol=symbol, candle_count=candle_count)
+                                logger.debug("주기적 계산: 캔들 데이터 부족", symbol=symbol, candle_count=candle_count, required=1)
                     except Exception as e:
                         logger.error("주기적 변동성 계산 오류", error=str(e), error_type=type(e).__name__)
             except Exception as e:
@@ -116,13 +116,30 @@ class CandleCollector:
             logger.debug("변동성 계산 결과 없음", symbol=symbol, candle_count=candle_count)
             return
         
-        # 계산된 값이 있는지 확인
-        has_data = any([
-            result.get("volatility_15m") is not None,
-            result.get("volatility_30m") is not None,
-            result.get("range_1m") is not None,
-            result.get("range_1m_mean_15m") is not None,
-        ])
+        # 계산된 값 확인 및 로깅
+        volatility_15m = result.get("volatility_15m")
+        volatility_30m = result.get("volatility_30m")
+        range_1m = result.get("range_1m")
+        range_1m_mean_15m = result.get("range_1m_mean_15m")
+        
+        logger.debug(
+            "변동성 계산 결과",
+            symbol=symbol,
+            candle_count=candle_count,
+            volatility_15m=float(volatility_15m) if volatility_15m is not None else None,
+            volatility_30m=float(volatility_30m) if volatility_30m is not None else None,
+            range_1m=float(range_1m) if range_1m is not None else None,
+            range_1m_mean_15m=float(range_1m_mean_15m) if range_1m_mean_15m is not None else None,
+        )
+        
+        # 저장 조건: range_1m이 계산 가능하면 저장 (range_1m은 최소 1개 캔들만 있어도 계산 가능)
+        # range_1m이 None이 아니거나, range_1m_mean_15m이 None이 아니면 저장
+        has_data = (
+            range_1m is not None or
+            range_1m_mean_15m is not None or
+            volatility_15m is not None or
+            volatility_30m is not None
+        )
         
         if not has_data:
             logger.debug("변동성 계산 결과에 유효한 값 없음", symbol=symbol, candle_count=candle_count)
@@ -133,10 +150,10 @@ class CandleCollector:
                 volatility_model = MetricsVolatilityModel(
                     symbol=symbol,
                     timestamp=datetime.utcnow(),
-                    volatility_15m=result.get("volatility_15m"),
-                    volatility_30m=result.get("volatility_30m"),
-                    range_1m=result.get("range_1m"),
-                    range_1m_mean_15m=result.get("range_1m_mean_15m"),
+                    volatility_15m=volatility_15m,
+                    volatility_30m=volatility_30m,
+                    range_1m=range_1m,
+                    range_1m_mean_15m=range_1m_mean_15m,
                 )
                 session.add(volatility_model)
                 await session.commit()
@@ -144,12 +161,20 @@ class CandleCollector:
                     "변동성 저장 완료",
                     symbol=symbol,
                     candle_count=candle_count,
-                    volatility_15m=float(result.get("volatility_15m")) if result.get("volatility_15m") else None,
-                    volatility_30m=float(result.get("volatility_30m")) if result.get("volatility_30m") else None,
-                    range_1m=float(result.get("range_1m")) if result.get("range_1m") else None,
+                    volatility_15m=float(volatility_15m) if volatility_15m is not None else None,
+                    volatility_30m=float(volatility_30m) if volatility_30m is not None else None,
+                    range_1m=float(range_1m) if range_1m is not None else None,
+                    range_1m_mean_15m=float(range_1m_mean_15m) if range_1m_mean_15m is not None else None,
                 )
             except Exception as e:
                 await session.rollback()
-                logger.error("변동성 저장 오류", error=str(e), symbol=symbol, error_type=type(e).__name__, exc_info=True)
+                logger.error(
+                    "변동성 저장 오류",
+                    error=str(e),
+                    symbol=symbol,
+                    candle_count=candle_count,
+                    error_type=type(e).__name__,
+                    exc_info=True
+                )
 
 

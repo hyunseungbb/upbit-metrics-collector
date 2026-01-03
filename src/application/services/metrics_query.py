@@ -261,7 +261,15 @@ def calculate_staleness_and_freshness(
     
     max_staleness_ms = 0
     
+    # staleness 계산에서 제외할 메트릭 타입 (업데이트 주기가 긴 메트릭)
+    # liquidity는 24시간 거래대금이므로 업데이트 주기가 길 수 있음
+    excluded_metrics = {"liquidity"}
+    
     for metric_type, metric_data in metrics.items():
+        # 제외 목록에 있는 메트릭은 staleness 계산에서 제외
+        if metric_type in excluded_metrics:
+            continue
+            
         if metric_type == "trade_imbalance":
             # trade_imbalance는 배열
             for ti_item in metric_data:
@@ -276,7 +284,14 @@ def calculate_staleness_and_freshness(
                 staleness_ms = int((query_time - as_of).total_seconds() * 1000)
                 max_staleness_ms = max(max_staleness_ms, staleness_ms)
     
-    is_fresh = max_staleness_ms <= freshness_ms
+    # volatility는 as_of가 None일 수 있으므로, None인 경우는 staleness 계산에서 제외
+    # 하지만 다른 메트릭이 있으면 그 메트릭의 staleness를 사용
+    if max_staleness_ms == 0:
+        # 모든 메트릭이 제외되었거나 as_of가 None인 경우
+        # 기본값으로 0을 반환하되, is_fresh는 False로 설정
+        is_fresh = False
+    else:
+        is_fresh = max_staleness_ms <= freshness_ms
     
     return max_staleness_ms, is_fresh
 
