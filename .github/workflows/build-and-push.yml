@@ -77,16 +77,23 @@ jobs:
           # KUBECONFIG 디코딩 및 저장
           KUBECONFIG_PATH="${{ github.workspace }}/kubeconfig.yaml"
           echo "Processing KUBECONFIG secret..."
+          echo "KUBECONFIG secret length: ${#KUBECONFIG_SECRET} characters"
           
           # base64 디코딩 시도
-          DECODED_CONTENT=$(echo "${{ secrets.KUBECONFIG }}" | base64 -d 2>/dev/null)
-          if [ $? -eq 0 ] && [ -n "$DECODED_CONTENT" ]; then
+          KUBECONFIG_SECRET="${{ secrets.KUBECONFIG }}"
+          DECODED_CONTENT=$(echo "$KUBECONFIG_SECRET" | base64 -d 2>&1)
+          DECODE_EXIT_CODE=$?
+          
+          if [ $DECODE_EXIT_CODE -eq 0 ] && [ -n "$DECODED_CONTENT" ]; then
             echo "$DECODED_CONTENT" > "$KUBECONFIG_PATH"
-            echo "KUBECONFIG decoded from base64"
+            echo "KUBECONFIG decoded from base64 successfully"
+            echo "Decoded file size: $(wc -c < "$KUBECONFIG_PATH") bytes"
           else
-            # base64 디코딩 실패 시 raw 텍스트로 저장
-            echo "KUBECONFIG is not base64 encoded, using as raw text"
-            echo "${{ secrets.KUBECONFIG }}" > "$KUBECONFIG_PATH"
+            echo "Base64 decode failed (exit code: $DECODE_EXIT_CODE)"
+            echo "Decode error: $DECODED_CONTENT"
+            echo "Trying to use KUBECONFIG as raw text..."
+            echo "$KUBECONFIG_SECRET" > "$KUBECONFIG_PATH"
+            echo "Raw file size: $(wc -c < "$KUBECONFIG_PATH") bytes"
           fi
           
           # 파일이 제대로 생성되었는지 확인
