@@ -1,0 +1,83 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'Dockerfile'
+      - 'requirements.txt'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Configure kubectl
+        run: |
+          # Kubernetes 클러스터 접근을 위한 설정
+          # GitHub Secrets에 KUBECONFIG 또는 클러스터 인증 정보가 필요합니다
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > kubeconfig.yaml || echo "KUBECONFIG not set, skipping kubectl"
+          export KUBECONFIG=$(pwd)/kubeconfig.yaml
+
+      - name: Restart Kubernetes Deployments
+        run: |
+          if [ -f kubeconfig.yaml ]; then
+            echo "Restarting deployments to pull new image..."
+            kubectl rollout restart deployment/api -n upbit-metrics-collector || echo "API deployment restart failed"
+            kubectl rollout restart deployment/collector -n upbit-metrics-collector || echo "Collector deployment restart failed"
+            echo "Deployments restarted successfully"
+          else
+            echo "KUBECONFIG not configured. Please restart deployments manually:"
+            echo "  kubectl rollout restart deployment/api -n upbit-metrics-collector"
+            echo "  kubectl rollout restart deployment/collector -n upbit-metrics-collector"
+          fi
+
