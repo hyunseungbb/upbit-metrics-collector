@@ -77,10 +77,11 @@ jobs:
           # KUBECONFIG 디코딩 및 저장
           KUBECONFIG_PATH="${{ github.workspace }}/kubeconfig.yaml"
           echo "Processing KUBECONFIG secret..."
-          echo "KUBECONFIG secret length: ${#KUBECONFIG_SECRET} characters"
           
           # base64 디코딩 시도
           KUBECONFIG_SECRET="${{ secrets.KUBECONFIG }}"
+          echo "KUBECONFIG secret length: ${#KUBECONFIG_SECRET} characters"
+          
           DECODED_CONTENT=$(echo "$KUBECONFIG_SECRET" | base64 -d 2>&1)
           DECODE_EXIT_CODE=$?
           
