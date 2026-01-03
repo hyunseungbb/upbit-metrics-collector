@@ -22,10 +22,17 @@ UPBIT_ACCESS_KEY: str = os.getenv("UPBIT_ACCESS_KEY", "8fngRxfhmRqRPlFIjAXz518Sj
 UPBIT_SECRET_KEY: str = os.getenv("UPBIT_SECRET_KEY", "CRLmPYOUmkPRGbwu4oERLuvxQARZyPbDHP60tSdl")
 
 # 데이터베이스 설정
-DATABASE_URL: str = os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://trade_agent:password@localhost:5432/upbit_metrics"
-)
+# DATABASE_URL이 직접 제공되면 사용, 없으면 POSTGRES_USER/PASSWORD로 구성
+if os.getenv("DATABASE_URL"):
+    DATABASE_URL: str = os.getenv("DATABASE_URL")
+else:
+    # POSTGRES_USER와 POSTGRES_PASSWORD로 DATABASE_URL 구성
+    postgres_user = os.getenv("POSTGRES_USER", "trade_agent")
+    postgres_password = os.getenv("POSTGRES_PASSWORD", "password")
+    postgres_host = os.getenv("POSTGRES_HOST", "postgresql")
+    postgres_port = os.getenv("POSTGRES_PORT", "5432")
+    postgres_db = os.getenv("POSTGRES_DB", "upbit_metrics")
+    DATABASE_URL: str = f"postgresql+asyncpg://{postgres_user}:{postgres_password}@{postgres_host}:{postgres_port}/{postgres_db}"
 
 # 애플리케이션 설정
 APP_NAME: str = os.getenv("APP_NAME", "upbit-metrics-collector")
