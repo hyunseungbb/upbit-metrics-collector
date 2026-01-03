@@ -79,7 +79,9 @@ jobs:
           echo "Processing KUBECONFIG secret..."
           
           # base64 디코딩 시도
-          if echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$KUBECONFIG_PATH" 2>/dev/null; then
+          DECODED_CONTENT=$(echo "${{ secrets.KUBECONFIG }}" | base64 -d 2>/dev/null)
+          if [ $? -eq 0 ] && [ -n "$DECODED_CONTENT" ]; then
+            echo "$DECODED_CONTENT" > "$KUBECONFIG_PATH"
             echo "KUBECONFIG decoded from base64"
           else
             # base64 디코딩 실패 시 raw 텍스트로 저장
@@ -94,12 +96,29 @@ jobs:
             exit 1
           fi
           
-          # KUBECONFIG 파일 내용 확인 (서버 주소만)
-          echo "KUBECONFIG file created. Server:"
-          grep -A 2 "server:" "$KUBECONFIG_PATH" | head -3 || echo "Could not read server from kubeconfig"
+          # KUBECONFIG 파일 유효성 검증 (kubectl config view)
+          export KUBECONFIG="$KUBECONFIG_PATH"
+          echo "Validating KUBECONFIG file..."
+          if kubectl config view > /dev/null 2>&1; then
+            echo "KUBECONFIG file is valid"
+            # 서버 주소 확인
+            echo "KUBECONFIG server:"
+            kubectl config view -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null || echo "Could not read server from kubeconfig"
+            echo ""
+          else
+            echo "ERROR: KUBECONFIG file is invalid or corrupted"
+            echo "File size: $(wc -c < "$KUBECONFIG_PATH") bytes"
+            echo "First 200 characters:"
+            head -c 200 "$KUBECONFIG_PATH" || true
+            echo ""
+            echo "Last 200 characters:"
+            tail -c 200 "$KUBECONFIG_PATH" || true
+            echo ""
+            echo "configured=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
           
           # kubectl 연결 테스트
-          export KUBECONFIG="$KUBECONFIG_PATH"
           echo "Testing kubectl connection..."
           if kubectl cluster-info > /dev/null 2>&1; then
             echo "KUBECONFIG configured and cluster connection verified"
