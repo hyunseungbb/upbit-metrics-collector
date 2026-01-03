@@ -1,6 +1,6 @@
 # FastAPI 및 웹 프레임워크
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
+fastapi>=0.115.12
+uvicorn[standard]>=0.24.0
 pydantic>=2.11.7
 pydantic-settings>=2.6.1
 
