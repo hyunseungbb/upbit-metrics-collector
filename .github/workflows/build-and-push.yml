@@ -76,12 +76,16 @@ jobs:
           
           # KUBECONFIG 디코딩 및 저장
           KUBECONFIG_PATH="${{ github.workspace }}/kubeconfig.yaml"
-          echo "Decoding KUBECONFIG secret..."
-          echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$KUBECONFIG_PATH" || {
-            echo "Failed to decode KUBECONFIG"
-            echo "configured=false" >> $GITHUB_OUTPUT
-            exit 1
-          }
+          echo "Processing KUBECONFIG secret..."
+          
+          # base64 디코딩 시도
+          if echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$KUBECONFIG_PATH" 2>/dev/null; then
+            echo "KUBECONFIG decoded from base64"
+          else
+            # base64 디코딩 실패 시 raw 텍스트로 저장
+            echo "KUBECONFIG is not base64 encoded, using as raw text"
+            echo "${{ secrets.KUBECONFIG }}" > "$KUBECONFIG_PATH"
+          fi
           
           # 파일이 제대로 생성되었는지 확인
           if [ ! -f "$KUBECONFIG_PATH" ]; then
