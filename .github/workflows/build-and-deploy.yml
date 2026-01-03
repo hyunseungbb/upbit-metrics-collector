@@ -62,22 +62,67 @@ jobs:
           version: 'latest'
 
       - name: Configure kubectl
+        id: kubeconfig
         run: |
           # Kubernetes 클러스터 접근을 위한 설정
           # GitHub Secrets에 KUBECONFIG 또는 클러스터 인증 정보가 필요합니다
-          echo "${{ secrets.KUBECONFIG }}" | base64 -d > kubeconfig.yaml || echo "KUBECONFIG not set, skipping kubectl"
-          export KUBECONFIG=$(pwd)/kubeconfig.yaml
+          if [ -z "${{ secrets.KUBECONFIG }}" ]; then
+            echo "KUBECONFIG not set, skipping kubectl operations"
+            echo "configured=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # KUBECONFIG 디코딩 및 저장
+          KUBECONFIG_PATH="${{ github.workspace }}/kubeconfig.yaml"
+          echo "Decoding KUBECONFIG secret..."
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$KUBECONFIG_PATH" || {
+            echo "Failed to decode KUBECONFIG"
+            echo "configured=false" >> $GITHUB_OUTPUT
+            exit 1
+          }
+          
+          # 파일이 제대로 생성되었는지 확인
+          if [ ! -f "$KUBECONFIG_PATH" ]; then
+            echo "Failed to create kubeconfig.yaml"
+            echo "configured=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          # KUBECONFIG 파일 내용 확인 (서버 주소만)
+          echo "KUBECONFIG file created. Server:"
+          grep -A 2 "server:" "$KUBECONFIG_PATH" | head -3 || echo "Could not read server from kubeconfig"
+          
+          # kubectl 연결 테스트
+          export KUBECONFIG="$KUBECONFIG_PATH"
+          echo "Testing kubectl connection..."
+          if kubectl cluster-info > /dev/null 2>&1; then
+            echo "KUBECONFIG configured and cluster connection verified"
+            echo "configured=true" >> $GITHUB_OUTPUT
+            echo "kubeconfig_path=$KUBECONFIG_PATH" >> $GITHUB_OUTPUT
+          else
+            echo "Failed to connect to cluster with KUBECONFIG"
+            echo "Current KUBECONFIG: $KUBECONFIG"
+            kubectl cluster-info 2>&1 || true
+            echo "configured=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
 
       - name: Restart Kubernetes Deployments
+        if: steps.kubeconfig.outputs.configured == 'true'
+        env:
+          KUBECONFIG: ${{ steps.kubeconfig.outputs.kubeconfig_path }}
         run: |
-          if [ -f kubeconfig.yaml ]; then
-            echo "Restarting deployments to pull new image..."
-            kubectl rollout restart deployment/api -n upbit-metrics-collector || echo "API deployment restart failed"
-            kubectl rollout restart deployment/collector -n upbit-metrics-collector || echo "Collector deployment restart failed"
-            echo "Deployments restarted successfully"
-          else
-            echo "KUBECONFIG not configured. Please restart deployments manually:"
-            echo "  kubectl rollout restart deployment/api -n upbit-metrics-collector"
-            echo "  kubectl rollout restart deployment/collector -n upbit-metrics-collector"
-          fi
+          echo "KUBECONFIG path: $KUBECONFIG"
+          echo "Verifying kubectl connection..."
+          kubectl cluster-info || (echo "Failed to connect to cluster" && exit 1)
+          
+          echo "Restarting deployments..."
+          kubectl rollout restart deployment/api -n upbit-metrics-collector || (echo "API deployment restart failed" && exit 1)
+          kubectl rollout restart deployment/collector -n upbit-metrics-collector || (echo "Collector deployment restart failed" && exit 1)
+          echo "Deployments restarted successfully"
+          
+          # 재시작 상태 확인
+          echo "Waiting for rollout to complete..."
+          kubectl rollout status deployment/api -n upbit-metrics-collector --timeout=300s || echo "API rollout status check failed"
+          kubectl rollout status deployment/collector -n upbit-metrics-collector --timeout=300s || echo "Collector rollout status check failed"
 
