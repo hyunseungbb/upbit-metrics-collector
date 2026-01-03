@@ -80,8 +80,13 @@ jobs:
           KUBECONFIG_SECRET="${{ secrets.KUBECONFIG }}"
           echo "KUBECONFIG secret length: ${#KUBECONFIG_SECRET} characters"
           
+          # base64 디코딩 시도 (오류 메시지도 캡처)
+          set +e  # 오류 발생해도 계속 진행
           DECODED_CONTENT=$(echo "$KUBECONFIG_SECRET" | base64 -d 2>&1)
           DECODE_EXIT_CODE=$?
+          set -e  # 오류 발생 시 중단 모드 복원
+          
+          echo "Base64 decode exit code: $DECODE_EXIT_CODE"
           
           if [ $DECODE_EXIT_CODE -eq 0 ] && [ -n "$DECODED_CONTENT" ]; then
             echo "$DECODED_CONTENT" > "$KUBECONFIG_PATH"
@@ -89,7 +94,9 @@ jobs:
             echo "Decoded file size: $(wc -c < "$KUBECONFIG_PATH") bytes"
           else
             echo "Base64 decode failed (exit code: $DECODE_EXIT_CODE)"
-            echo "Decode error: $DECODED_CONTENT"
+            echo "Decode error output:"
+            echo "$DECODED_CONTENT" | head -20
+            echo ""
             echo "Trying to use KUBECONFIG as raw text..."
             echo "$KUBECONFIG_SECRET" > "$KUBECONFIG_PATH"
             echo "Raw file size: $(wc -c < "$KUBECONFIG_PATH") bytes"
