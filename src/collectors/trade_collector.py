@@ -3,7 +3,7 @@ Trade 데이터 수집기
 """
 import asyncio
 from typing import Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from ..infrastructure.adapters.trade import UpbitTradeAdapter
 from ..domain.services.trade_imbalance_calculator import TradeImbalanceCalculator
@@ -19,6 +19,7 @@ class TradeCollector:
         self.adapter = UpbitTradeAdapter()
         self.calculator = TradeImbalanceCalculator()
         self.running = False
+        self._save_lock = asyncio.Lock()  # 동시 실행 방지 락
     
     async def start(self, symbols: List[str]) -> None:
         """수집 시작"""
@@ -71,48 +72,79 @@ class TradeCollector:
         Returns:
             bool: 저장 성공 여부
         """
-        async with AsyncSessionLocal() as session:
-            try:
-                from sqlalchemy import select
-                from ..infrastructure.persistence.database.models import MonitoredSymbolsModel
-                
-                # 모니터링 중인 종목 목록 가져오기
-                result = await session.execute(
-                    select(MonitoredSymbolsModel).where(
-                        MonitoredSymbolsModel.is_active == True
+        # 동시 실행 방지: 락을 획득한 후에만 저장 로직 실행
+        async with self._save_lock:
+            async with AsyncSessionLocal() as session:
+                try:
+                    from sqlalchemy import select
+                    from ..infrastructure.persistence.database.models import MonitoredSymbolsModel
+                    
+                    # 모니터링 중인 종목 목록 가져오기
+                    result = await session.execute(
+                        select(MonitoredSymbolsModel).where(
+                            MonitoredSymbolsModel.is_active == True
+                        )
                     )
-                )
-                symbols = [row.symbol for row in result.scalars().all()]
-                
-                saved_count = 0
-                # 각 종목, 각 윈도우(30s, 60s)에 대해 저장
-                for symbol in symbols:
-                    for window_seconds in [30, 60]:
-                        imbalance_data = self.calculator.calculate(symbol, window_seconds)
-                        if imbalance_data:
-                            # window_minutes는 분 단위로 저장 (30초 = 0.5분, 60초 = 1분)
-                            # 하지만 모델이 정수만 받으므로 초 단위를 분으로 변환
-                            window_minutes = window_seconds // 60 if window_seconds >= 60 else 1
-                            
-                            imbalance_model = MetricsTradeImbalanceModel(
-                                symbol=symbol,
-                                timestamp=datetime.utcnow(),
-                                window_minutes=window_minutes,  # 30초는 1분으로, 60초는 1분으로 저장
-                                buy_volume=imbalance_data["buy_volume"],
-                                sell_volume=imbalance_data["sell_volume"],
-                                ti=imbalance_data["ti"],
-                                cvd=imbalance_data["cvd"],
-                            )
-                            session.add(imbalance_model)
-                            saved_count += 1
-                
-                if saved_count > 0:
-                    await session.commit()
-                    logger.debug("Trade 데이터 저장 완료", saved_count=saved_count)
-                    return True
-                return False
-            except Exception as e:
-                await session.rollback()
-                logger.error("Trade 저장 오류", error=str(e), error_type=type(e).__name__, exc_info=True)
-                return False
+                    symbols = [row.symbol for row in result.scalars().all()]
+                    
+                    saved_count = 0
+                    skipped_count = 0
+                    current_time = datetime.utcnow()
+                    # 최근 1초 이내 중복 체크를 위한 cutoff_time
+                    cutoff_time = current_time - timedelta(seconds=1)
+                    
+                    # 각 종목, 각 윈도우(30s, 60s)에 대해 저장
+                    for symbol in symbols:
+                        for window_seconds in [30, 60]:
+                            imbalance_data = self.calculator.calculate(symbol, window_seconds)
+                            if imbalance_data:
+                                # window_minutes를 초 단위로 저장 (30초 → 30, 60초 → 60)
+                                window_minutes = window_seconds
+                                
+                                # 중복 체크: 최근 1초 이내 같은 계산 결과가 있는지 확인
+                                existing_result = await session.execute(
+                                    select(MetricsTradeImbalanceModel).where(
+                                        MetricsTradeImbalanceModel.symbol == symbol,
+                                        MetricsTradeImbalanceModel.window_minutes == window_minutes,
+                                        MetricsTradeImbalanceModel.timestamp >= cutoff_time,
+                                        MetricsTradeImbalanceModel.buy_volume == imbalance_data["buy_volume"],
+                                        MetricsTradeImbalanceModel.sell_volume == imbalance_data["sell_volume"],
+                                        MetricsTradeImbalanceModel.ti == imbalance_data["ti"],
+                                        MetricsTradeImbalanceModel.cvd == imbalance_data["cvd"]
+                                    )
+                                )
+                                if existing_result.scalar_one_or_none():
+                                    skipped_count += 1
+                                    continue  # 이미 존재하면 스킵
+                                
+                                imbalance_model = MetricsTradeImbalanceModel(
+                                    symbol=symbol,
+                                    timestamp=current_time,
+                                    window_minutes=window_minutes,  # 초 단위로 저장 (30초 → 30, 60초 → 60)
+                                    buy_volume=imbalance_data["buy_volume"],
+                                    sell_volume=imbalance_data["sell_volume"],
+                                    ti=imbalance_data["ti"],
+                                    cvd=imbalance_data["cvd"],
+                                )
+                                session.add(imbalance_model)
+                                saved_count += 1
+                    
+                    if saved_count > 0:
+                        await session.commit()
+                        logger.debug(
+                            "Trade 데이터 저장 완료",
+                            saved_count=saved_count,
+                            skipped_count=skipped_count
+                        )
+                        return True
+                    if skipped_count > 0:
+                        logger.debug(
+                            "Trade 데이터 중복으로 스킵",
+                            skipped_count=skipped_count
+                        )
+                    return False
+                except Exception as e:
+                    await session.rollback()
+                    logger.error("Trade 저장 오류", error=str(e), error_type=type(e).__name__, exc_info=True)
+                    return False
 
