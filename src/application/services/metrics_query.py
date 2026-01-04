@@ -132,57 +132,30 @@ async def get_latest_metrics_for_symbols(
                 }
             
             # 4. Trade Imbalance (ti_windows_sec에 맞는 것)
-            # 30초와 60초는 모두 window_minutes=1로 저장되므로, 각각 별도로 조회
+            # 각 window_sec를 별도로 조회 (30초 → 30, 60초 → 60)
             trade_imbalances = []
             
-            # window_minutes=1인 최신 데이터를 가져옴 (30초와 60초 모두 포함)
-            ti_result = await session.execute(
-                select(MetricsTradeImbalanceModel)
-                .where(
-                    and_(
-                        MetricsTradeImbalanceModel.symbol == symbol,
-                        MetricsTradeImbalanceModel.window_minutes == 1,
-                    )
-                )
-                .order_by(desc(MetricsTradeImbalanceModel.timestamp))
-                .limit(1)
-            )
-            ti = ti_result.scalar_one_or_none()
-            
-            # 요청한 각 window_sec에 대해 데이터 추가
-            # 현재 구조상 30초와 60초를 구분할 수 없으므로, 같은 데이터를 사용하되 window_sec는 다르게 설정
-            if ti:
-                for window_sec in ti_windows_sec:
-                    # window_minutes=1인 경우 (30초 또는 60초)
-                    window_min = window_sec // 60 if window_sec >= 60 else 1
-                    if window_min == 1:
-                        trade_imbalances.append({
-                            "window_sec": window_sec,
-                            "ti": str(ti.ti),
-                            "cvd": str(ti.cvd),
-                            "as_of": ti.timestamp.isoformat(),
-                        })
-                    else:
-                        # window_minutes > 1인 경우 별도 조회
-                        ti_result_long = await session.execute(
-                            select(MetricsTradeImbalanceModel)
-                            .where(
-                                and_(
-                                    MetricsTradeImbalanceModel.symbol == symbol,
-                                    MetricsTradeImbalanceModel.window_minutes == window_min,
-                                )
-                            )
-                            .order_by(desc(MetricsTradeImbalanceModel.timestamp))
-                            .limit(1)
+            for window_sec in ti_windows_sec:
+                ti_result = await session.execute(
+                    select(MetricsTradeImbalanceModel)
+                    .where(
+                        and_(
+                            MetricsTradeImbalanceModel.symbol == symbol,
+                            MetricsTradeImbalanceModel.window_seconds == window_sec,
                         )
-                        ti_long = ti_result_long.scalar_one_or_none()
-                        if ti_long:
-                            trade_imbalances.append({
-                                "window_sec": window_sec,
-                                "ti": str(ti_long.ti),
-                                "cvd": str(ti_long.cvd),
-                                "as_of": ti_long.timestamp.isoformat(),
-                            })
+                    )
+                    .order_by(desc(MetricsTradeImbalanceModel.timestamp))
+                    .limit(1)
+                )
+                ti = ti_result.scalar_one_or_none()
+                
+                if ti:
+                    trade_imbalances.append({
+                        "window_sec": window_sec,
+                        "ti": str(ti.ti),
+                        "cvd": str(ti.cvd),
+                        "as_of": ti.timestamp.isoformat(),
+                    })
             
             if trade_imbalances:
                 metrics["trade_imbalance"] = trade_imbalances
@@ -400,23 +373,14 @@ async def get_metrics_summary(
             }
         
         # 4. Trade Imbalance 통계 (ti_windows_sec에 맞는 것)
-        ti_windows_minutes = []
-        for sec in ti_windows_sec:
-            if sec <= 30:
-                ti_windows_minutes.append(1)
-            elif sec <= 60:
-                ti_windows_minutes.append(1)
-            else:
-                ti_windows_minutes.append(sec // 60)
-        
+        # 각 window_sec를 별도로 조회 (30초 → 30, 60초 → 60)
         for window_sec in ti_windows_sec:
-            window_min = 1 if window_sec <= 60 else window_sec // 60
             ti_result = await session.execute(
                 select(MetricsTradeImbalanceModel.ti)
                 .where(
                     and_(
                         MetricsTradeImbalanceModel.symbol == symbol,
-                        MetricsTradeImbalanceModel.window_minutes == window_min,
+                        MetricsTradeImbalanceModel.window_seconds == window_sec,
                         MetricsTradeImbalanceModel.timestamp >= cutoff_time,
                     )
                 )

@@ -35,3 +35,5 @@ class MetricsVolatilityModel(Base):
         return f"<MetricsVolatilityModel(symbol={self.symbol}, volatility_15m={self.volatility_15m}, timestamp={self.timestamp})>"
 
 
+
+

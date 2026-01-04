@@ -43,3 +43,5 @@ class MetricsSlippageModel(Base):
         return f"<MetricsSlippageModel(symbol={self.symbol}, side={self.side}, slippage_bps={self.slippage_bps}, timestamp={self.timestamp})>"
 
 
+
+

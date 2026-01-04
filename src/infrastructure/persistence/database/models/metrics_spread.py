@@ -36,3 +36,5 @@ class MetricsSpreadModel(Base):
         return f"<MetricsSpreadModel(symbol={self.symbol}, spread_bps={self.spread_bps}, timestamp={self.timestamp})>"
 
 
+
+

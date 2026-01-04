@@ -24,3 +24,5 @@ class MonitoredSymbolsModel(Base):
         return f"<MonitoredSymbolsModel(symbol={self.symbol}, is_active={self.is_active})>"
 
 
+
+

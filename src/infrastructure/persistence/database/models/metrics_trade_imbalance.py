@@ -17,26 +17,26 @@ class MetricsTradeImbalanceModel(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     symbol = Column(String(20), nullable=False, index=True)
     timestamp = Column(DateTime, nullable=False, index=True)
-    window_minutes = Column(Integer, nullable=False)  # 윈도우 크기 (초 단위: 30초=30, 60초=60, 또는 분 단위: 1/3/5분)
+    window_seconds = Column(Integer, nullable=False)  # 윈도우 크기 (초 단위: 30초=30, 60초=60)
     buy_volume = Column(Numeric(20, 8), nullable=False)  # 매수 체결량
     sell_volume = Column(Numeric(20, 8), nullable=False)  # 매도 체결량
     ti = Column(Numeric(5, 4), nullable=False)  # Trade Imbalance (0~1)
     cvd = Column(Numeric(20, 8), nullable=False)  # Cumulative Volume Delta (buy_volume - sell_volume)
     
-    # 파생값 (별도 컬럼으로 저장하지 않고 window_minutes로 구분)
-    # ti_1m, ti_3m, ti_5m은 window_minutes로 구분
-    # cvd_1m, cvd_5m도 window_minutes로 구분
+    # 파생값 (별도 컬럼으로 저장하지 않고 window_seconds로 구분)
+    # ti_30s, ti_60s는 window_seconds로 구분 (30초=30, 60초=60)
+    # cvd_30s, cvd_60s도 window_seconds로 구분
     
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # 복합 인덱스
     __table_args__ = (
         Index('idx_metrics_trade_imbalance_symbol_timestamp', 'symbol', 'timestamp'),
-        Index('idx_metrics_trade_imbalance_symbol_window', 'symbol', 'window_minutes'),
+        Index('idx_metrics_trade_imbalance_symbol_window', 'symbol', 'window_seconds'),
     )
 
     def __repr__(self):
-        return f"<MetricsTradeImbalanceModel(symbol={self.symbol}, window={self.window_minutes}m, ti={self.ti}, timestamp={self.timestamp})>"
+        return f"<MetricsTradeImbalanceModel(symbol={self.symbol}, window={self.window_seconds}s, ti={self.ti}, timestamp={self.timestamp})>"
 
 
 

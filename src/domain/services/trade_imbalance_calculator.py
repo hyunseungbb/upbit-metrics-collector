@@ -45,6 +45,7 @@ class TradeImbalanceCalculator:
                 window_data = self.windows[symbol][window_seconds]
                 
                 # 윈도우 범위 밖의 데이터 제거
+                # 현재 거래 시간 기준으로 window_seconds 이전 데이터는 제거
                 cutoff_time = trade_time - timedelta(seconds=window_seconds)
                 window_data[:] = [
                     item for item in window_data

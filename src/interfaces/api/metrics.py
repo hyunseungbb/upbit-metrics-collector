@@ -72,12 +72,12 @@ async def get_metrics(
         )
         slippage_sell = slippage_sell_result.scalar_one_or_none()
         
-        # 체결 방향 비율 (1m, 3m, 5m)
+        # 체결 방향 비율 (1m=60s, 3m=180s, 5m=300s)
         trade_imbalance_1m_result = await db.execute(
             select(MetricsTradeImbalanceModel)
             .where(
                 MetricsTradeImbalanceModel.symbol == symbol,
-                MetricsTradeImbalanceModel.window_minutes == 1
+                MetricsTradeImbalanceModel.window_seconds == 60
             )
             .order_by(desc(MetricsTradeImbalanceModel.timestamp))
             .limit(1)
@@ -88,7 +88,7 @@ async def get_metrics(
             select(MetricsTradeImbalanceModel)
             .where(
                 MetricsTradeImbalanceModel.symbol == symbol,
-                MetricsTradeImbalanceModel.window_minutes == 3
+                MetricsTradeImbalanceModel.window_seconds == 180
             )
             .order_by(desc(MetricsTradeImbalanceModel.timestamp))
             .limit(1)
@@ -99,7 +99,7 @@ async def get_metrics(
             select(MetricsTradeImbalanceModel)
             .where(
                 MetricsTradeImbalanceModel.symbol == symbol,
-                MetricsTradeImbalanceModel.window_minutes == 5
+                MetricsTradeImbalanceModel.window_seconds == 300
             )
             .order_by(desc(MetricsTradeImbalanceModel.timestamp))
             .limit(1)

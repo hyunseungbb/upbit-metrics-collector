@@ -98,14 +98,14 @@ class TradeCollector:
                         for window_seconds in [30, 60]:
                             imbalance_data = self.calculator.calculate(symbol, window_seconds)
                             if imbalance_data:
-                                # window_minutes를 초 단위로 저장 (30초 → 30, 60초 → 60)
-                                window_minutes = window_seconds
+                                # window_seconds를 초 단위로 저장 (30초 → 30, 60초 → 60)
+                                window_seconds_value = window_seconds
                                 
                                 # 중복 체크: 최근 1초 이내 같은 계산 결과가 있는지 확인
                                 existing_result = await session.execute(
                                     select(MetricsTradeImbalanceModel).where(
                                         MetricsTradeImbalanceModel.symbol == symbol,
-                                        MetricsTradeImbalanceModel.window_minutes == window_minutes,
+                                        MetricsTradeImbalanceModel.window_seconds == window_seconds_value,
                                         MetricsTradeImbalanceModel.timestamp >= cutoff_time,
                                         MetricsTradeImbalanceModel.buy_volume == imbalance_data["buy_volume"],
                                         MetricsTradeImbalanceModel.sell_volume == imbalance_data["sell_volume"],
@@ -120,7 +120,7 @@ class TradeCollector:
                                 imbalance_model = MetricsTradeImbalanceModel(
                                     symbol=symbol,
                                     timestamp=current_time,
-                                    window_minutes=window_minutes,  # 초 단위로 저장 (30초 → 30, 60초 → 60)
+                                    window_seconds=window_seconds_value,  # 초 단위로 저장 (30초 → 30, 60초 → 60)
                                     buy_volume=imbalance_data["buy_volume"],
                                     sell_volume=imbalance_data["sell_volume"],
                                     ti=imbalance_data["ti"],
